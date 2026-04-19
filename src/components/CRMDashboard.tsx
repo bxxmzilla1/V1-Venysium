@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import MessageBubble from './MessageBubble';
+import AlbumBubble from './AlbumBubble';
 import {
   MessageCircle,
   Search,
@@ -43,6 +44,38 @@ interface Message {
   out: boolean;
   fromId: string | null;
   mediaType: MediaType;
+  groupedId: string | null;
+}
+
+interface Album {
+  kind: 'album';
+  groupedId: string;
+  messages: Message[];
+  out: boolean;
+  date: number;
+}
+
+type MessageOrAlbum = (Message & { kind?: undefined }) | Album;
+
+// Group consecutive messages that share the same groupedId into albums
+function groupMessages(messages: Message[]): MessageOrAlbum[] {
+  const result: MessageOrAlbum[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const msg = messages[i];
+    if (msg.groupedId) {
+      const group: Message[] = [msg];
+      while (i + 1 < messages.length && messages[i + 1].groupedId === msg.groupedId) {
+        i++;
+        group.push(messages[i]);
+      }
+      result.push({ kind: 'album', groupedId: msg.groupedId, messages: group, out: msg.out, date: group[group.length - 1].date });
+    } else {
+      result.push(msg);
+    }
+    i++;
+  }
+  return result;
 }
 
 interface CRMNote {
@@ -356,6 +389,7 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       out: true,
       fromId: null,
       mediaType: null,
+      groupedId: null,
     };
     setMessages((prev) => [...prev, tempMsg]);
     setTimeout(() => scrollToBottom(true), 50);
@@ -776,20 +810,34 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
                       No messages yet. Say hello!
                     </div>
                   ) : (
-                    messages.map((msg) => (
-                      <MessageBubble
-                        key={msg.id}
-                        id={msg.id}
-                        message={msg.message}
-                        date={msg.date}
-                        out={msg.out}
-                        mediaType={msg.mediaType}
-                        rawId={selected.rawId}
-                        entityType={selected.entityType}
-                        accessHash={selected.accessHash}
-                        formatDate={formatDate}
-                      />
-                    ))
+                    groupMessages(messages).map((item) => {
+                      if (item.kind === 'album') {
+                        return (
+                          <AlbumBubble
+                            key={item.groupedId}
+                            album={item}
+                            rawId={selected.rawId}
+                            entityType={selected.entityType}
+                            accessHash={selected.accessHash}
+                            formatDate={formatDate}
+                          />
+                        );
+                      }
+                      return (
+                        <MessageBubble
+                          key={item.id}
+                          id={item.id}
+                          message={item.message}
+                          date={item.date}
+                          out={item.out}
+                          mediaType={item.mediaType}
+                          rawId={selected.rawId}
+                          entityType={selected.entityType}
+                          accessHash={selected.accessHash}
+                          formatDate={formatDate}
+                        />
+                      );
+                    })
                   )}
                   <div ref={messagesEndRef} />
                 </div>

@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
           out: msg.out,
           fromId: msg.fromId ? msg.fromId.toString() : null,
           mediaType: classifyMedia(msg.media),
+          groupedId: 'groupedId' in msg && msg.groupedId ? msg.groupedId.toString() : null,
         }));
     });
 

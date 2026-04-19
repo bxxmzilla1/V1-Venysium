@@ -13,13 +13,17 @@ export async function GET(req: NextRequest) {
     const url = new URL(req.url);
     const peerId = url.searchParams.get('peerId');
     const limit = parseInt(url.searchParams.get('limit') || '50');
+    const minId = parseInt(url.searchParams.get('minId') || '0');
 
     if (!peerId) {
       return NextResponse.json({ error: 'peerId required' }, { status: 400 });
     }
 
     const messages = await withClient(session.sessionString, async (client) => {
-      const result = await client.getMessages(peerId, { limit });
+      const opts: { limit: number; minId?: number } = { limit };
+      if (minId > 0) opts.minId = minId;
+
+      const result = await client.getMessages(peerId, opts);
 
       return result
         .reverse()

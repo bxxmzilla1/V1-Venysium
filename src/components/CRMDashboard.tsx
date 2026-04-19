@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   MessageCircle,
@@ -8,7 +8,6 @@ import {
   LogOut,
   Send,
   Users,
-  RefreshCw,
   ChevronLeft,
   StickyNote,
   Tag,
@@ -109,6 +108,9 @@ const TAG_COLORS = [
   '#ffa35c', '#5cffb5', '#ff5c8a', '#5ce8ff',
 ];
 
+const DIALOG_POLL_MS = 3000;   // dialog list refreshes every 3 s
+const MESSAGE_POLL_MS = 1000;  // active chat refreshes every 1 s
+
 export default function CRMDashboard({ firstName }: { firstName: string }) {
   const router = useRouter();
   const [dialogs, setDialogs] = useState<Dialog[]>([]);
@@ -125,9 +127,32 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
   const [newTag, setNewTag] = useState('');
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
 
-  // Load CRM data from localStorage
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const selectedRef = useRef<Dialog | null>(null);
+  const lastMessageIdRef = useRef<number>(0);
+  const dialogFetchingRef = useRef(false);
+  const msgFetchingRef = useRef(false);
+  const searchRef = useRef(search);
+
+  // Keep refs in sync
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
+  useEffect(() => { searchRef.current = search; }, [search]);
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+
+  function isScrolledToBottom() {
+    const el = messagesContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }
+
+  function scrollToBottom(smooth = true) {
+    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'instant' });
+  }
+
   function loadCrm(dialogId: string) {
     try {
       const raw = localStorage.getItem(`crm_${dialogId}`);
@@ -143,42 +168,109 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     setCrmData(data);
   }
 
-  async function fetchDialogs() {
-    setLoading(true);
+  // ── dialog polling ────────────────────────────────────────────────────────
+
+  async function fetchDialogsSilent() {
+    if (dialogFetchingRef.current) return;
+    dialogFetchingRef.current = true;
     try {
-      const res = await fetch(`/api/dialogs?limit=60&search=${encodeURIComponent(search)}`);
+      const q = searchRef.current;
+      const res = await fetch(`/api/dialogs?limit=60&search=${encodeURIComponent(q)}`);
+      if (!res.ok) { setLiveStatus('error'); return; }
       const data = await res.json();
-      if (data.dialogs) setDialogs(data.dialogs);
+      if (data.dialogs) {
+        setDialogs(data.dialogs);
+        setLiveStatus('live');
+      }
     } catch {
-      // ignore
+      setLiveStatus('error');
     } finally {
-      setLoading(false);
+      dialogFetchingRef.current = false;
     }
   }
 
-  useEffect(() => {
-    fetchDialogs();
-  }, [search]);
+  // Initial load with spinner
+  async function fetchDialogsInitial() {
+    setLoading(true);
+    await fetchDialogsSilent();
+    setLoading(false);
+  }
 
+  // ── message polling ───────────────────────────────────────────────────────
+
+  async function fetchNewMessages() {
+    const dialog = selectedRef.current;
+    if (!dialog || msgFetchingRef.current) return;
+    msgFetchingRef.current = true;
+    try {
+      const minId = lastMessageIdRef.current;
+      const url = minId > 0
+        ? `/api/messages?peerId=${encodeURIComponent(dialog.id)}&limit=20&minId=${minId}`
+        : `/api/messages?peerId=${encodeURIComponent(dialog.id)}&limit=50`;
+
+      const res = await fetch(url);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.messages || data.messages.length === 0) return;
+
+      const atBottom = isScrolledToBottom();
+
+      if (minId === 0) {
+        // Initial full load
+        setMessages(data.messages);
+        if (data.messages.length > 0) {
+          lastMessageIdRef.current = Math.max(...data.messages.map((m: Message) => m.id));
+        }
+        setTimeout(() => scrollToBottom(false), 50);
+      } else {
+        // Append only new messages
+        setMessages((prev) => {
+          const existingIds = new Set(prev.map((m) => m.id));
+          const fresh = (data.messages as Message[]).filter((m) => !existingIds.has(m.id));
+          if (fresh.length === 0) return prev;
+          lastMessageIdRef.current = Math.max(lastMessageIdRef.current, ...fresh.map((m) => m.id));
+          if (atBottom) setTimeout(() => scrollToBottom(true), 50);
+          return [...prev, ...fresh];
+        });
+      }
+    } catch {
+      // ignore
+    } finally {
+      msgFetchingRef.current = false;
+    }
+  }
+
+  // ── polling intervals ─────────────────────────────────────────────────────
+
+  // Dialog polling: every 3 s
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    fetchDialogsInitial();
+    const id = setInterval(fetchDialogsSilent, DIALOG_POLL_MS);
+    return () => clearInterval(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Re-fetch dialogs when search changes
+  useEffect(() => {
+    fetchDialogsSilent();
+  }, [search]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Message polling: every 1 s when a dialog is selected
+  useEffect(() => {
+    if (!selected) return;
+    lastMessageIdRef.current = 0;
+    setMessages([]);
+    setMsgLoading(true);
+    fetchNewMessages().then(() => setMsgLoading(false));
+    const id = setInterval(fetchNewMessages, MESSAGE_POLL_MS);
+    return () => clearInterval(id);
+  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── actions ───────────────────────────────────────────────────────────────
 
   async function selectDialog(dialog: Dialog) {
     setSelected(dialog);
     loadCrm(dialog.id);
-    setMessages([]);
-    setMsgLoading(true);
     setSidebarOpen(false);
-    try {
-      const res = await fetch(`/api/messages?peerId=${encodeURIComponent(dialog.id)}&limit=50`);
-      const data = await res.json();
-      if (data.messages) setMessages(data.messages);
-    } catch {
-      // ignore
-    } finally {
-      setMsgLoading(false);
-    }
   }
 
   async function sendMessage(e: React.FormEvent) {
@@ -190,8 +282,9 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     setSending(true);
 
     // Optimistic update
+    const tempId = Date.now();
     const tempMsg: Message = {
-      id: Date.now(),
+      id: tempId,
       message: text,
       date: Math.floor(Date.now() / 1000),
       out: true,
@@ -199,13 +292,22 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       media: null,
     };
     setMessages((prev) => [...prev, tempMsg]);
+    setTimeout(() => scrollToBottom(true), 50);
 
     try {
-      await fetch('/api/send', {
+      const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ peerId: selected.id, message: text }),
       });
+      const data = await res.json();
+      // Replace optimistic message with real one and update lastMessageId
+      if (data.message?.id) {
+        lastMessageIdRef.current = Math.max(lastMessageIdRef.current, data.message.id);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, id: data.message.id } : m))
+        );
+      }
     } catch {
       // ignore
     } finally {
@@ -250,10 +352,6 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     const updated = { ...crmData, tags: crmData.tags.filter((t) => t !== tag) };
     saveCrm(selected.id, updated);
   }
-
-  const filteredDialogs = dialogs;
-
-  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: 'var(--bg-primary)' }}>
@@ -301,14 +399,26 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
                 <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Hi, {firstName}</div>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: '4px' }}>
-              <button
-                onClick={fetchDialogs}
-                title="Refresh"
-                style={iconBtnStyle}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Live indicator */}
+              <div
+                title={liveStatus === 'live' ? 'Live' : liveStatus === 'error' ? 'Connection error' : 'Connecting...'}
+                style={{ display: 'flex', alignItems: 'center', gap: '5px' }}
               >
-                <RefreshCw size={16} />
-              </button>
+                <div
+                  style={{
+                    width: '7px',
+                    height: '7px',
+                    borderRadius: '50%',
+                    background: liveStatus === 'live' ? '#5cffb5' : liveStatus === 'error' ? '#ff6b6b' : '#ffa35c',
+                    boxShadow: liveStatus === 'live' ? '0 0 6px #5cffb5' : 'none',
+                    animation: liveStatus === 'live' ? 'pulse 2s infinite' : 'none',
+                  }}
+                />
+                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                  {liveStatus === 'live' ? 'Live' : liveStatus === 'error' ? 'Error' : '...'}
+                </span>
+              </div>
               <button onClick={logout} title="Logout" style={iconBtnStyle}>
                 <LogOut size={16} />
               </button>
@@ -381,12 +491,12 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
             <div style={{ display: 'flex', justifyContent: 'center', padding: '40px' }}>
               <Loader2 size={24} style={{ color: 'var(--accent)', animation: 'spin 1s linear infinite' }} />
             </div>
-          ) : filteredDialogs.length === 0 ? (
+          ) : dialogs.length === 0 ? (
             <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '14px' }}>
               No conversations found
             </div>
           ) : (
-            filteredDialogs.map((dialog) => (
+            dialogs.map((dialog) => (
               <div
                 key={dialog.id}
                 onClick={() => selectDialog(dialog)}
@@ -566,6 +676,7 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
               {/* Messages */}
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div
+                  ref={messagesContainerRef}
                   style={{
                     flex: 1,
                     overflowY: 'auto',

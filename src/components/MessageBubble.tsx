@@ -31,16 +31,26 @@ function mediaUrl(rawId: string, entityType: string, accessHash: string, msgId: 
 
 // Reusable lazy image — shows spinner while loading, error state on failure
 function LazyImage({
-  src, maxW = 300, maxH = 400, onClick, rounded = false,
+  src, fixedW, maxW = 300, maxH = 400, onClick, rounded = false, cover = false,
 }: {
-  src: string; maxW?: number; maxH?: number; onClick?: () => void; rounded?: boolean;
+  src: string;
+  /** Force the container to this exact pixel width (prevents collapsing to thumbnail size) */
+  fixedW?: number;
+  maxW?: number;
+  maxH?: number;
+  onClick?: () => void;
+  rounded?: boolean;
+  /** Use object-fit:cover to fill the container */
+  cover?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
 
+  const containerW = fixedW ?? undefined;
+
   if (error) {
     return (
-      <div style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.35)' }}>
+      <div style={{ width: containerW, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.35)', background: 'rgba(0,0,0,0.15)', borderRadius: rounded ? '12px' : undefined }}>
         <ImageOff size={18} />
         <span style={{ fontSize: '12px' }}>Media unavailable</span>
       </div>
@@ -53,12 +63,15 @@ function LazyImage({
       style={{
         position: 'relative',
         cursor: onClick ? 'pointer' : 'default',
-        minHeight: loaded ? undefined : '100px',
-        minWidth: loaded ? undefined : '140px',
+        width: containerW,
+        minWidth: containerW ?? (loaded ? undefined : '200px'),
+        minHeight: loaded ? undefined : '160px',
+        maxWidth: maxW,
+        maxHeight: loaded ? maxH : undefined,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        background: loaded ? 'transparent' : 'rgba(0,0,0,0.15)',
+        background: loaded ? 'transparent' : 'rgba(0,0,0,0.12)',
         borderRadius: rounded ? '12px' : undefined,
         overflow: 'hidden',
       }}
@@ -73,10 +86,12 @@ function LazyImage({
         onLoad={() => setLoaded(true)}
         onError={() => setError(true)}
         style={{
-          maxWidth: maxW,
-          maxHeight: maxH,
-          width: '100%',
+          width: cover ? '100%' : (containerW ? '100%' : 'auto'),
+          height: cover ? '100%' : 'auto',
+          maxWidth: cover ? undefined : maxW,
+          maxHeight: cover ? undefined : maxH,
           display: 'block',
+          objectFit: cover ? 'cover' : 'contain',
           opacity: loaded ? 1 : 0,
           transition: 'opacity 0.2s',
           borderRadius: rounded ? '12px' : undefined,
@@ -114,13 +129,13 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
   function renderMedia() {
     switch (mediaType) {
 
-      // ── Photo — thumbnail inline, full in lightbox ─────────────────────────
+      // ── Photo — fixed 260px wide thumbnail inline, full in lightbox ─────────
       case 'photo':
         return (
           <>
             <LazyImage
               src={thumbUrl}
-              maxW={300} maxH={360}
+              fixedW={260} maxH={340}
               onClick={() => setLightbox({ src: fullUrl, type: 'photo' })}
             />
             {lightbox && <Lightbox src={lightbox.src} type={lightbox.type} onClose={() => setLightbox(null)} />}
@@ -133,7 +148,7 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
           <>
             <LazyImage
               src={thumbUrl}
-              maxW={160} maxH={160} rounded
+              fixedW={160} maxH={160} rounded
               onClick={() => setLightbox({ src: fullUrl, type: 'sticker' })}
             />
             {lightbox && <Lightbox src={lightbox.src} type={lightbox.type} onClose={() => setLightbox(null)} />}
@@ -146,7 +161,7 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
           <>
             <LazyImage
               src={thumbUrl}
-              maxW={160} maxH={160} rounded
+              fixedW={160} maxH={160} rounded
               onClick={() => setLightbox({ src: thumbUrl, type: 'sticker' })}
             />
             {lightbox && <Lightbox src={lightbox.src} type={lightbox.type} onClose={() => setLightbox(null)} />}
@@ -159,7 +174,7 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
           <video
             src={gifVideoUrl}
             autoPlay loop muted playsInline
-            style={{ maxWidth: '300px', maxHeight: '300px', width: '100%', display: 'block' }}
+            style={{ width: '260px', maxHeight: '300px', display: 'block', objectFit: 'contain', background: 'rgba(0,0,0,0.1)' }}
           />
         );
 
@@ -169,9 +184,9 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
           <>
             <div
               onClick={() => setLightbox({ src: gifVideoUrl, type: 'video' })}
-              style={{ position: 'relative', cursor: 'pointer', display: 'inline-block', lineHeight: 0 }}
+              style={{ position: 'relative', cursor: 'pointer', display: 'block', lineHeight: 0 }}
             >
-              <LazyImage src={videoThumbUrl} maxW={300} maxH={300} />
+              <LazyImage src={videoThumbUrl} fixedW={260} maxH={300} />
               {/* Play overlay */}
               <div style={{
                 position: 'absolute', inset: 0,

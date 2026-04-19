@@ -180,7 +180,8 @@ export default function AlbumBubble({ album, rawId, entityType, accessHash, form
               <img
                 src={thumbUrl(rawId, entityType, accessHash, msg.id)}
                 alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                loading="lazy"
+                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
               />
               {/* "+N" overlay on last visible */}
               {isLast && (

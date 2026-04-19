@@ -5,7 +5,7 @@ import { X, Download } from 'lucide-react';
 
 interface LightboxProps {
   src: string;
-  type: 'photo' | 'video' | 'sticker';
+  type: 'photo' | 'video' | 'sticker' | 'gif';
   onClose: () => void;
 }
 
@@ -98,12 +98,16 @@ export default function Lightbox({ src, type, onClose }: LightboxProps) {
             src={src}
             controls
             autoPlay
-            style={{
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              borderRadius: '12px',
-              outline: 'none',
-            }}
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '12px', outline: 'none' }}
+          />
+        ) : type === 'gif' ? (
+          <video
+            src={src}
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: '12px', outline: 'none' }}
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element

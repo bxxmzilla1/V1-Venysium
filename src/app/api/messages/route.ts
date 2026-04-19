@@ -4,7 +4,7 @@ import { getSession } from '@/lib/session';
 import { withClient } from '@/lib/telegram';
 import { buildInputPeer, EntityType } from '@/lib/peer';
 
-type MediaType = 'photo' | 'video' | 'voice' | 'audio' | 'sticker' | 'document' | null;
+type MediaType = 'photo' | 'gif' | 'video' | 'voice' | 'audio' | 'sticker' | 'sticker_animated' | 'document' | null;
 
 function classifyMedia(media: Api.TypeMessageMedia | undefined | null): MediaType {
   if (!media) return null;
@@ -12,13 +12,33 @@ function classifyMedia(media: Api.TypeMessageMedia | undefined | null): MediaTyp
   if (media instanceof Api.MessageMediaDocument) {
     const doc = media.document;
     if (!(doc instanceof Api.Document)) return 'document';
+
+    let isAnimated = false;
+    let isSticker = false;
+    let isVideo = false;
+    let isVoice = false;
+    let isAudio = false;
+
     for (const attr of doc.attributes) {
-      if (attr instanceof Api.DocumentAttributeSticker) return 'sticker';
-      if (attr instanceof Api.DocumentAttributeVideo) return 'video';
+      if (attr instanceof Api.DocumentAttributeAnimated) isAnimated = true;
+      if (attr instanceof Api.DocumentAttributeSticker) isSticker = true;
+      if (attr instanceof Api.DocumentAttributeVideo) isVideo = true;
       if (attr instanceof Api.DocumentAttributeAudio) {
-        return attr.voice ? 'voice' : 'audio';
+        if (attr.voice) isVoice = true;
+        else isAudio = true;
       }
     }
+
+    // Priority order matters
+    if (isSticker) {
+      // TGS animated stickers vs static WebP stickers
+      const isAnimatedSticker = isAnimated || doc.mimeType === 'application/x-tgsticker';
+      return isAnimatedSticker ? 'sticker_animated' : 'sticker';
+    }
+    if (isAnimated) return 'gif';   // GIFs stored as looping MP4
+    if (isVideo) return 'video';
+    if (isVoice) return 'voice';
+    if (isAudio) return 'audio';
     return 'document';
   }
   return null;

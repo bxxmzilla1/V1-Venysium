@@ -4,6 +4,13 @@ import { createClient } from '@/lib/telegram';
 import { getSession } from '@/lib/session';
 import { buildInputPeer, EntityType } from '@/lib/peer';
 
+function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
+  // Copy only the relevant slice — buf.buffer may be a larger shared backing store
+  const ab = new ArrayBuffer(buf.byteLength);
+  new Uint8Array(ab).set(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+  return ab;
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
@@ -17,7 +24,8 @@ export async function GET(req: NextRequest) {
     const entityType = (url.searchParams.get('entityType') || 'user') as EntityType;
     const accessHash = url.searchParams.get('accessHash') || '0';
     const msgId = parseInt(url.searchParams.get('msgId') || '0');
-    const thumb = url.searchParams.get('thumb') === '1';
+    // thumb=1 → get thumbnail (for videos/animated stickers), thumb=0 → full download
+    const wantThumb = url.searchParams.get('thumb') === '1';
 
     if (!rawId || !msgId) {
       return new NextResponse('rawId and msgId required', { status: 400 });
@@ -35,31 +43,53 @@ export async function GET(req: NextRequest) {
         return new NextResponse('Media not found', { status: 404 });
       }
 
-      // Determine MIME type
+      // Determine actual MIME type from media
       let mimeType = 'image/jpeg';
-      if (msg.media instanceof Api.MessageMediaDocument) {
+      let isAnimatedSticker = false;
+
+      if (msg.media instanceof Api.MessageMediaPhoto) {
+        mimeType = 'image/jpeg';
+      } else if (msg.media instanceof Api.MessageMediaDocument) {
         const doc = msg.media.document;
         if (doc instanceof Api.Document) {
           mimeType = doc.mimeType || 'application/octet-stream';
+          if (mimeType === 'application/x-tgsticker') {
+            isAnimatedSticker = true;
+          }
         }
       }
 
-      // Download — use thumb index 0 (smallest) for video previews
-      const downloadParams: { thumb?: number } = {};
-      if (thumb) downloadParams.thumb = 0;
+      // For animated stickers (TGS = gzipped Lottie), browsers can't render the raw file.
+      // Always fetch the thumbnail (a WebP/JPEG frame) instead.
+      const needThumb = wantThumb || isAnimatedSticker;
 
-      const buffer = await client.downloadMedia(msg, downloadParams) as Buffer;
+      let downloadResult: Buffer | string;
+      if (needThumb) {
+        downloadResult = await client.downloadMedia(msg, { thumb: 0 }) as Buffer | string;
+        // Thumbnails are always JPEG
+        mimeType = 'image/jpeg';
+      } else {
+        downloadResult = await client.downloadMedia(msg, {}) as Buffer | string;
+      }
+
+      // downloadMedia can return string (filepath) in some configs — normalise to Buffer
+      let buffer: Buffer;
+      if (typeof downloadResult === 'string') {
+        const fs = await import('fs/promises');
+        buffer = await fs.readFile(downloadResult);
+      } else {
+        buffer = downloadResult as Buffer;
+      }
 
       if (!buffer || buffer.length === 0) {
         return new NextResponse('Empty media', { status: 404 });
       }
 
-      return new NextResponse(buffer.buffer as ArrayBuffer, {
+      return new NextResponse(bufferToArrayBuffer(buffer), {
         status: 200,
         headers: {
           'Content-Type': mimeType,
           'Content-Length': buffer.length.toString(),
-          // Cache aggressively — Telegram media doesn't change
           'Cache-Control': 'public, max-age=86400, immutable',
         },
       });
@@ -68,6 +98,7 @@ export async function GET(req: NextRequest) {
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    return new NextResponse(message, { status: 500 });
+    console.error('[media]', message);
+    return new NextResponse(`Media error: ${message}`, { status: 500 });
   }
 }

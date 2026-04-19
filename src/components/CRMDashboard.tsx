@@ -34,7 +34,7 @@ interface Dialog {
   accessHash: string;
 }
 
-type MediaType = 'photo' | 'video' | 'voice' | 'audio' | 'sticker' | 'document' | null;
+type MediaType = 'photo' | 'gif' | 'video' | 'voice' | 'audio' | 'sticker' | 'sticker_animated' | 'document' | null;
 
 interface Message {
   id: number;

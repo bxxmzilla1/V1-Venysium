@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import MessageBubble from './MessageBubble';
 import {
   MessageCircle,
   Search,
@@ -33,13 +34,15 @@ interface Dialog {
   accessHash: string;
 }
 
+type MediaType = 'photo' | 'video' | 'voice' | 'audio' | 'sticker' | 'document' | null;
+
 interface Message {
   id: number;
   message: string;
   date: number;
   out: boolean;
   fromId: string | null;
-  media: string | null;
+  mediaType: MediaType;
 }
 
 interface CRMNote {
@@ -352,7 +355,7 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       date: Math.floor(Date.now() / 1000),
       out: true,
       fromId: null,
-      media: null,
+      mediaType: null,
     };
     setMessages((prev) => [...prev, tempMsg]);
     setTimeout(() => scrollToBottom(true), 50);
@@ -774,29 +777,18 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
                     </div>
                   ) : (
                     messages.map((msg) => (
-                      <div
+                      <MessageBubble
                         key={msg.id}
-                        className="animate-fade-in"
-                        style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: msg.out ? 'flex-end' : 'flex-start',
-                        }}
-                      >
-                        <div className={`message-bubble ${msg.out ? 'sent' : 'received'}`}>
-                          {msg.message || (msg.media ? `[${msg.media}]` : '')}
-                        </div>
-                        <span
-                          style={{
-                            fontSize: '10px',
-                            color: 'var(--text-secondary)',
-                            marginTop: '3px',
-                            padding: '0 4px',
-                          }}
-                        >
-                          {formatDate(msg.date)}
-                        </span>
-                      </div>
+                        id={msg.id}
+                        message={msg.message}
+                        date={msg.date}
+                        out={msg.out}
+                        mediaType={msg.mediaType}
+                        rawId={selected.rawId}
+                        entityType={selected.entityType}
+                        accessHash={selected.accessHash}
+                        formatDate={formatDate}
+                      />
                     ))
                   )}
                   <div ref={messagesEndRef} />

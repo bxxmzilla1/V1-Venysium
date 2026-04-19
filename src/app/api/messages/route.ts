@@ -1,7 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Api } from 'telegram';
 import { getSession } from '@/lib/session';
 import { withClient } from '@/lib/telegram';
 import { buildInputPeer, EntityType } from '@/lib/peer';
+
+type MediaType = 'photo' | 'video' | 'voice' | 'audio' | 'sticker' | 'document' | null;
+
+function classifyMedia(media: Api.TypeMessageMedia | undefined | null): MediaType {
+  if (!media) return null;
+  if (media instanceof Api.MessageMediaPhoto) return 'photo';
+  if (media instanceof Api.MessageMediaDocument) {
+    const doc = media.document;
+    if (!(doc instanceof Api.Document)) return 'document';
+    for (const attr of doc.attributes) {
+      if (attr instanceof Api.DocumentAttributeSticker) return 'sticker';
+      if (attr instanceof Api.DocumentAttributeVideo) return 'video';
+      if (attr instanceof Api.DocumentAttributeAudio) {
+        return attr.voice ? 'voice' : 'audio';
+      }
+    }
+    return 'document';
+  }
+  return null;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -37,7 +58,7 @@ export async function GET(req: NextRequest) {
           date: msg.date,
           out: msg.out,
           fromId: msg.fromId ? msg.fromId.toString() : null,
-          media: msg.media ? msg.media.className : null,
+          mediaType: classifyMedia(msg.media),
         }));
     });
 

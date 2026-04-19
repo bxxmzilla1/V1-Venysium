@@ -5,7 +5,6 @@ import { getSession } from '@/lib/session';
 import { buildInputPeer, EntityType } from '@/lib/peer';
 
 function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
-  // Copy only the relevant slice — buf.buffer may be a larger shared backing store
   const ab = new ArrayBuffer(buf.byteLength);
   new Uint8Array(ab).set(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
   return ab;
@@ -14,7 +13,6 @@ function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
 export async function GET(req: NextRequest) {
   try {
     const session = await getSession();
-
     if (!session.isAuthenticated || !session.sessionString) {
       return new NextResponse('Unauthorized', { status: 401 });
     }
@@ -24,8 +22,9 @@ export async function GET(req: NextRequest) {
     const entityType = (url.searchParams.get('entityType') || 'user') as EntityType;
     const accessHash = url.searchParams.get('accessHash') || '0';
     const msgId = parseInt(url.searchParams.get('msgId') || '0');
-    // thumb=1 → get thumbnail (for videos/animated stickers), thumb=0 → full download
-    const wantThumb = url.searchParams.get('thumb') === '1';
+
+    // quality: 'thumb' = smallest (~s), 'medium' = medium (~m), 'full' = original
+    const quality = url.searchParams.get('q') || 'thumb';
 
     if (!rawId || !msgId) {
       return new NextResponse('rawId and msgId required', { status: 400 });
@@ -36,16 +35,18 @@ export async function GET(req: NextRequest) {
 
     try {
       const peer = buildInputPeer(entityType, rawId, accessHash);
-      const messages = await client.getMessages(peer, { ids: [msgId] });
-      const msg = messages[0];
+      const result = await client.getMessages(peer, { ids: [msgId] });
+      const msg = result[0];
 
-      if (!msg || !msg.media) {
+      // getMessages can return MessageEmpty for inaccessible messages
+      if (!msg || msg instanceof Api.MessageEmpty || !('media' in msg) || !msg.media) {
         return new NextResponse('Media not found', { status: 404 });
       }
 
-      // Determine actual MIME type from media
       let mimeType = 'image/jpeg';
       let isAnimatedSticker = false;
+      let isVideo = false;
+      let isGif = false;
 
       if (msg.media instanceof Api.MessageMediaPhoto) {
         mimeType = 'image/jpeg';
@@ -53,26 +54,38 @@ export async function GET(req: NextRequest) {
         const doc = msg.media.document;
         if (doc instanceof Api.Document) {
           mimeType = doc.mimeType || 'application/octet-stream';
-          if (mimeType === 'application/x-tgsticker') {
-            isAnimatedSticker = true;
+          if (mimeType === 'application/x-tgsticker') isAnimatedSticker = true;
+
+          let hasVideo = false;
+          let hasAnimated = false;
+          for (const attr of doc.attributes) {
+            if (attr instanceof Api.DocumentAttributeVideo) hasVideo = true;
+            if (attr instanceof Api.DocumentAttributeAnimated) hasAnimated = true;
           }
+          if (hasVideo && !hasAnimated) isVideo = true;
+          if (hasAnimated) isGif = true;
         }
       }
 
-      // For animated stickers (TGS = gzipped Lottie), browsers can't render the raw file.
-      // Always fetch the thumbnail (a WebP/JPEG frame) instead.
-      const needThumb = wantThumb || isAnimatedSticker;
+      // Decide what to actually download
+      // Thumbnails: animated stickers, 'thumb' quality, video thumbnails
+      const useThumbnail = isAnimatedSticker || quality === 'thumb' || (isVideo && quality !== 'full');
 
-      let downloadResult: Buffer | string;
-      if (needThumb) {
-        downloadResult = await client.downloadMedia(msg, { thumb: 0 }) as Buffer | string;
-        // Thumbnails are always JPEG
+      let downloadParams: { thumb?: number; sizeType?: string } = {};
+
+      if (useThumbnail) {
+        // thumb:0 = first/smallest thumbnail from Telegram's available sizes
+        downloadParams = { thumb: 0 };
         mimeType = 'image/jpeg';
-      } else {
-        downloadResult = await client.downloadMedia(msg, {}) as Buffer | string;
+      } else if (quality === 'medium' && !isGif && !isVideo) {
+        // For photos: request medium size ('m' ~320px)
+        downloadParams = { sizeType: 'm' };
+        mimeType = 'image/jpeg';
       }
+      // 'full' or GIFs/videos: no extra params, download full file
 
-      // downloadMedia can return string (filepath) in some configs — normalise to Buffer
+      const downloadResult = await client.downloadMedia(msg, downloadParams) as Buffer | string;
+
       let buffer: Buffer;
       if (typeof downloadResult === 'string') {
         const fs = await import('fs/promises');
@@ -90,7 +103,7 @@ export async function GET(req: NextRequest) {
         headers: {
           'Content-Type': mimeType,
           'Content-Length': buffer.length.toString(),
-          'Cache-Control': 'public, max-age=86400, immutable',
+          'Cache-Control': 'public, max-age=604800, immutable', // 7 days
         },
       });
     } finally {
@@ -98,7 +111,7 @@ export async function GET(req: NextRequest) {
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown error';
-    console.error('[media]', message);
+    console.error('[/api/media]', message);
     return new NextResponse(`Media error: ${message}`, { status: 500 });
   }
 }

@@ -28,7 +28,9 @@ interface Dialog {
   isUser: boolean;
   isGroup: boolean;
   isChannel: boolean;
-  entityId: string | null;
+  entityType: 'user' | 'chat' | 'channel';
+  rawId: string;
+  accessHash: string;
 }
 
 interface Message {
@@ -204,9 +206,10 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     msgFetchingRef.current = true;
     try {
       const minId = lastMessageIdRef.current;
+      const base = `/api/messages?rawId=${encodeURIComponent(dialog.rawId)}&entityType=${dialog.entityType}&accessHash=${encodeURIComponent(dialog.accessHash)}`;
       const url = minId > 0
-        ? `/api/messages?peerId=${encodeURIComponent(dialog.id)}&limit=20&minId=${minId}`
-        : `/api/messages?peerId=${encodeURIComponent(dialog.id)}&limit=50`;
+        ? `${base}&limit=20&minId=${minId}`
+        : `${base}&limit=50`;
 
       const res = await fetch(url);
       if (!res.ok) return;
@@ -298,7 +301,12 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       const res = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ peerId: selected.id, message: text }),
+        body: JSON.stringify({
+          rawId: selected.rawId,
+          entityType: selected.entityType,
+          accessHash: selected.accessHash,
+          message: text,
+        }),
       });
       const data = await res.json();
       // Replace optimistic message with real one and update lastMessageId

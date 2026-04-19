@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Api } from 'telegram';
+import bigInt from 'big-integer';
 import { getSession } from '@/lib/session';
 import { withClient } from '@/lib/telegram';
 
@@ -26,12 +27,25 @@ export async function GET(req: NextRequest) {
         .slice(0, limit)
         .map((dialog) => {
           const entity = dialog.entity;
-          let photo: string | null = null;
 
-          // Extract entity ID for avatar fetching
-          let entityId: string | null = null;
-          if (entity && 'id' in entity) {
-            entityId = entity.id.toString();
+          // Determine entity type and extract raw ID + access hash
+          // so we can reconstruct InputPeer in subsequent API calls
+          let entityType: 'user' | 'chat' | 'channel' = 'user';
+          let rawId = '0';
+          let accessHash = '0';
+
+          if (entity instanceof Api.User) {
+            entityType = 'user';
+            rawId = entity.id.toString();
+            accessHash = entity.accessHash?.toString() || '0';
+          } else if (entity instanceof Api.Chat) {
+            entityType = 'chat';
+            rawId = entity.id.toString();
+            accessHash = '0';
+          } else if (entity instanceof Api.Channel) {
+            entityType = 'channel';
+            rawId = entity.id.toString();
+            accessHash = entity.accessHash?.toString() || '0';
           }
 
           return {
@@ -43,8 +57,10 @@ export async function GET(req: NextRequest) {
             isUser: dialog.isUser,
             isGroup: dialog.isGroup,
             isChannel: dialog.isChannel,
-            photo,
-            entityId,
+            // Entity resolution fields
+            entityType,
+            rawId,
+            accessHash,
           };
         });
     });

@@ -1,10 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageCircle, Phone, Shield, Lock, Loader2, ChevronRight } from 'lucide-react';
+import { MessageCircle, Phone, Shield, Lock, Loader2, ChevronRight, Clock } from 'lucide-react';
 
 type Step = 'phone' | 'code' | 'password';
+
+// Parse "A wait of X seconds is required" → X
+function parseFloodWait(msg: string): number | null {
+  const m = msg.match(/wait of (\d+) seconds/i);
+  return m ? parseInt(m[1]) : null;
+}
+
+function formatWait(secs: number): string {
+  if (secs < 60) return `${secs} seconds`;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = secs % 60;
+  const parts: string[] = [];
+  if (h > 0) parts.push(`${h}h`);
+  if (m > 0) parts.push(`${m}m`);
+  if (s > 0 && h === 0) parts.push(`${s}s`);
+  return parts.join(' ');
+}
 
 export default function LoginForm() {
   const router = useRouter();
@@ -14,6 +32,30 @@ export default function LoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [floodSecs, setFloodSecs] = useState<number | null>(null);
+
+  // Countdown timer for flood wait
+  useEffect(() => {
+    if (!floodSecs || floodSecs <= 0) return;
+    const id = setInterval(() => {
+      setFloodSecs((s) => {
+        if (s === null || s <= 1) { clearInterval(id); return null; }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [floodSecs]);
+
+  function handleError(msg: string) {
+    const waitSecs = parseFloodWait(msg);
+    if (waitSecs) {
+      setFloodSecs(waitSecs);
+      setError('');
+    } else {
+      setError(msg);
+      setFloodSecs(null);
+    }
+  }
 
   async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
@@ -30,7 +72,7 @@ export default function LoginForm() {
       if (!res.ok) throw new Error(data.error);
       setStep('code');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to send code');
+      handleError(err instanceof Error ? err.message : 'Failed to send code');
     } finally {
       setLoading(false);
     }
@@ -40,6 +82,7 @@ export default function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setFloodSecs(null);
 
     try {
       const res = await fetch('/api/auth/verify-code', {
@@ -58,7 +101,7 @@ export default function LoginForm() {
       router.push('/dashboard');
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Verification failed');
+      handleError(err instanceof Error ? err.message : 'Verification failed');
     } finally {
       setLoading(false);
     }
@@ -68,6 +111,7 @@ export default function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setFloodSecs(null);
 
     try {
       const res = await fetch('/api/auth/verify-code', {
@@ -80,7 +124,7 @@ export default function LoginForm() {
       router.push('/dashboard');
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      handleError(err instanceof Error ? err.message : 'Authentication failed');
     } finally {
       setLoading(false);
     }
@@ -252,6 +296,38 @@ export default function LoginForm() {
               />
             )}
 
+            {/* Flood wait banner */}
+            {floodSecs && floodSecs > 0 && (
+              <div
+                style={{
+                  background: 'rgba(255,163,92,0.1)',
+                  border: '1px solid rgba(255,163,92,0.35)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  marginTop: '14px',
+                  display: 'flex',
+                  gap: '12px',
+                  alignItems: 'flex-start',
+                }}
+              >
+                <Clock size={18} style={{ color: '#ffa35c', flexShrink: 0, marginTop: '1px' }} />
+                <div>
+                  <div style={{ fontSize: '13px', fontWeight: '700', color: '#ffa35c', marginBottom: '4px' }}>
+                    Telegram Rate Limit
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'rgba(255,163,92,0.85)', lineHeight: '1.5' }}>
+                    Too many login attempts on this number. Please wait{' '}
+                    <span style={{ fontWeight: '700', color: '#ffa35c' }}>{formatWait(floodSecs)}</span>{' '}
+                    before trying again.
+                  </div>
+                  <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.3)', marginTop: '6px' }}>
+                    This limit is set by Telegram — not the app.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Generic error */}
             {error && (
               <div
                 style={{
@@ -270,18 +346,18 @@ export default function LoginForm() {
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || (!!floodSecs && floodSecs > 0)}
               style={{
                 width: '100%',
                 padding: '14px',
                 marginTop: '16px',
                 borderRadius: '12px',
-                background: loading ? 'rgba(108,99,255,0.5)' : 'var(--accent)',
+                background: (loading || (floodSecs && floodSecs > 0)) ? 'rgba(108,99,255,0.35)' : 'var(--accent)',
                 color: 'white',
                 border: 'none',
                 fontSize: '15px',
                 fontWeight: '600',
-                cursor: loading ? 'not-allowed' : 'pointer',
+                cursor: (loading || (floodSecs && floodSecs > 0)) ? 'not-allowed' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

@@ -138,6 +138,8 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
   const dialogFetchingRef = useRef(false);
   const msgFetchingRef = useRef(false);
   const searchRef = useRef(search);
+  // Track which dialog IDs have been marked read locally so polling doesn't re-add the badge
+  const readDialogIds = useRef<Set<string>>(new Set());
 
   // Keep refs in sync
   useEffect(() => { selectedRef.current = selected; }, [selected]);
@@ -170,6 +172,25 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     setCrmData(data);
   }
 
+  function markDialogRead(dialog: Dialog, maxId: number) {
+    // Zero badge locally
+    readDialogIds.current.add(dialog.id);
+    setDialogs((prev) =>
+      prev.map((d) => d.id === dialog.id ? { ...d, unreadCount: 0 } : d)
+    );
+    // Fire mark-read to Telegram server (best-effort)
+    fetch('/api/mark-read', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        rawId: dialog.rawId,
+        entityType: dialog.entityType,
+        accessHash: dialog.accessHash,
+        maxId,
+      }),
+    }).catch(() => {});
+  }
+
   // ── dialog polling ────────────────────────────────────────────────────────
 
   async function fetchDialogsSilent() {
@@ -181,7 +202,19 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       if (!res.ok) { setLiveStatus('error'); return; }
       const data = await res.json();
       if (data.dialogs) {
-        setDialogs(data.dialogs);
+        // Zero out unread count for dialogs we've already marked read locally
+        // until Telegram's server confirms (usually within 1-2 polls)
+        const patched = (data.dialogs as Dialog[]).map((d) => {
+          if (readDialogIds.current.has(d.id) && d.unreadCount > 0) {
+            return { ...d, unreadCount: 0 };
+          }
+          // Once Telegram confirms zero, remove from local set
+          if (d.unreadCount === 0) {
+            readDialogIds.current.delete(d.id);
+          }
+          return d;
+        });
+        setDialogs(patched);
         setLiveStatus('live');
       }
     } catch {
@@ -222,7 +255,10 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
         // Initial full load
         setMessages(data.messages);
         if (data.messages.length > 0) {
-          lastMessageIdRef.current = Math.max(...data.messages.map((m: Message) => m.id));
+          const maxId = Math.max(...(data.messages as Message[]).map((m) => m.id));
+          lastMessageIdRef.current = maxId;
+          // Mark all read on initial load
+          markDialogRead(dialog, maxId);
         }
         setTimeout(() => scrollToBottom(false), 50);
       } else {
@@ -231,7 +267,11 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
           const existingIds = new Set(prev.map((m) => m.id));
           const fresh = (data.messages as Message[]).filter((m) => !existingIds.has(m.id));
           if (fresh.length === 0) return prev;
-          lastMessageIdRef.current = Math.max(lastMessageIdRef.current, ...fresh.map((m) => m.id));
+          const newMaxId = Math.max(lastMessageIdRef.current, ...fresh.map((m) => m.id));
+          lastMessageIdRef.current = newMaxId;
+          // Mark incoming messages as read
+          const hasIncoming = fresh.some((m) => !m.out);
+          if (hasIncoming) markDialogRead(dialog, newMaxId);
           if (atBottom) setTimeout(() => scrollToBottom(true), 50);
           return [...prev, ...fresh];
         });
@@ -274,6 +314,26 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
     setSelected(dialog);
     loadCrm(dialog.id);
     setSidebarOpen(false);
+
+    // Optimistically zero the badge immediately
+    if (dialog.unreadCount > 0) {
+      readDialogIds.current.add(dialog.id);
+      setDialogs((prev) =>
+        prev.map((d) => d.id === dialog.id ? { ...d, unreadCount: 0 } : d)
+      );
+
+      // Tell Telegram the messages are read (best-effort, fire-and-forget)
+      fetch('/api/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawId: dialog.rawId,
+          entityType: dialog.entityType,
+          accessHash: dialog.accessHash,
+          maxId: 0, // 0 = mark all as read
+        }),
+      }).catch(() => {});
+    }
   }
 
   async function sendMessage(e: React.FormEvent) {

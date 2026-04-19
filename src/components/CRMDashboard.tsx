@@ -4,11 +4,11 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import MessageBubble from './MessageBubble';
 import AlbumBubble from './AlbumBubble';
+import MediaInput from './MediaInput';
 import {
   MessageCircle,
   Search,
   LogOut,
-  Send,
   Users,
   ChevronLeft,
   StickyNote,
@@ -413,6 +413,26 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
           prev.map((m) => (m.id === tempId ? { ...m, id: data.message.id } : m))
         );
       }
+    } catch {
+      // ignore
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function sendMedia(files: File[], caption: string) {
+    if (!selected || files.length === 0) return;
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.append('rawId', selected.rawId);
+      fd.append('entityType', selected.entityType);
+      fd.append('accessHash', selected.accessHash);
+      fd.append('caption', caption);
+      files.forEach((f) => fd.append('files', f));
+
+      await fetch('/api/send-media', { method: 'POST', body: fd });
+      // Polling will pick up the new messages automatically
     } catch {
       // ignore
     } finally {
@@ -844,54 +864,14 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
 
                 {/* Input */}
                 {selected.isUser || selected.isGroup ? (
-                  <form
-                    onSubmit={sendMessage}
-                    style={{
-                      display: 'flex',
-                      gap: '10px',
-                      padding: '14px 16px',
-                      borderTop: '1px solid var(--border)',
-                      background: 'var(--bg-secondary)',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <input
-                      type="text"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      placeholder={`Message ${selected.name}...`}
-                      style={{
-                        flex: 1,
-                        padding: '12px 16px',
-                        background: 'var(--bg-hover)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '12px',
-                        color: 'var(--text-primary)',
-                        fontSize: '14px',
-                        outline: 'none',
-                      }}
-                    />
-                    <button
-                      type="submit"
-                      disabled={!input.trim() || sending}
-                      style={{
-                        padding: '12px 18px',
-                        borderRadius: '12px',
-                        background: input.trim() && !sending ? 'var(--accent)' : 'var(--bg-hover)',
-                        border: 'none',
-                        color: input.trim() && !sending ? 'white' : 'var(--text-secondary)',
-                        cursor: input.trim() && !sending ? 'pointer' : 'not-allowed',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {sending ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
-                    </button>
-                  </form>
+                  <MediaInput
+                    input={input}
+                    setInput={setInput}
+                    sending={sending}
+                    placeholder={`Message ${selected.name}…`}
+                    onSendText={sendMessage}
+                    onSendMedia={sendMedia}
+                  />
                 ) : (
                   <div
                     style={{

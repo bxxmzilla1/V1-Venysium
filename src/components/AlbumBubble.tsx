@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Download, ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
 
 interface Message {
   id: number;
@@ -38,6 +38,61 @@ function mediumUrl(rawId: string, entityType: string, accessHash: string, msgId:
 }
 function fullUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=full`;
+}
+
+// Individual album grid cell with error/fallback handling
+function AlbumCell({
+  src, fallbackSrc, isLast, remaining, spanFirst, onClick,
+}: {
+  src: string;
+  fallbackSrc: string;
+  isLast: boolean;
+  remaining: number;
+  spanFirst: boolean;
+  onClick: () => void;
+}) {
+  const [errored, setErrored] = useState(false);
+
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        position: 'relative',
+        aspectRatio: '1',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        background: 'rgba(255,255,255,0.05)',
+        gridColumn: spanFirst ? '1' : undefined,
+      }}
+    >
+      {errored ? (
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.25)' }}>
+          <ImageOff size={22} />
+        </div>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          onError={(e) => {
+            // Try falling back to full quality before giving up
+            const img = e.currentTarget;
+            if (img.src !== fallbackSrc) {
+              img.src = fallbackSrc;
+            } else {
+              setErrored(true);
+            }
+          }}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
+        />
+      )}
+      {isLast && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ color: 'white', fontSize: '26px', fontWeight: '700' }}>+{remaining}</span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Full-screen album lightbox with prev/next navigation
@@ -166,33 +221,15 @@ export default function AlbumBubble({ album, rawId, entityType, accessHash, form
         {visible.map((msg, i) => {
           const isLast = !showAll && i === MAX_VISIBLE - 1 && remaining > 0;
           return (
-            <div
+            <AlbumCell
               key={msg.id}
+              src={mediumUrl(rawId, entityType, accessHash, msg.id)}
+              fallbackSrc={fullUrl(rawId, entityType, accessHash, msg.id)}
+              isLast={isLast}
+              remaining={remaining}
+              spanFirst={visibleCount >= 4 && i === 3}
               onClick={() => setLightboxStart(i)}
-              style={{
-                position: 'relative',
-                aspectRatio: '1',
-                overflow: 'hidden',
-                cursor: 'pointer',
-                background: 'rgba(255,255,255,0.05)',
-                // Make 4th item (bottom-left) span correctly
-                gridColumn: visibleCount >= 4 && i === 3 ? '1' : undefined,
-              }}
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={mediumUrl(rawId, entityType, accessHash, msg.id)}
-                alt=""
-                loading="lazy"
-                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}
-              />
-              {/* "+N" overlay on last visible */}
-              {isLast && (
-                <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: 'white', fontSize: '26px', fontWeight: '700' }}>+{remaining}</span>
-                </div>
-              )}
-            </div>
+            />
           );
         })}
       </div>

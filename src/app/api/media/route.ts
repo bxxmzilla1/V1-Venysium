@@ -78,8 +78,8 @@ export async function GET(req: NextRequest) {
         downloadParams = { thumb: 0 };
         mimeType = 'image/jpeg';
       } else if (quality === 'medium' && !isGif && !isVideo) {
-        // For photos: request medium size ('m' ~320px)
-        downloadParams = { sizeType: 'm' };
+        // 'x' = ~800px — large enough to be sharp, smaller than original
+        downloadParams = { sizeType: 'x' };
         mimeType = 'image/jpeg';
       }
       // 'full' or GIFs/videos: no extra params, download full file

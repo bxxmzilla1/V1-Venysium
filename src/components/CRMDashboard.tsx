@@ -165,6 +165,7 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
   const [newTag, setNewTag] = useState('');
   const [tab, setTab] = useState<'chats' | 'contacts'>('chats');
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isMobile, setIsMobile] = useState(false);
   const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'error'>('connecting');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -180,6 +181,18 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
   // Keep refs in sync
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { searchRef.current = search; }, [search]);
+
+  // Detect mobile vs desktop so we only collapse the sidebar on small screens
+  useEffect(() => {
+    const check = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (!mobile) setSidebarOpen(true); // always show sidebar on desktop
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
 
   // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -349,7 +362,8 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
   async function selectDialog(dialog: Dialog) {
     setSelected(dialog);
     loadCrm(dialog.id);
-    setSidebarOpen(false);
+    // On mobile, slide the sidebar away; on desktop keep both panels visible
+    if (isMobile) setSidebarOpen(false);
 
     // Optimistically zero the badge immediately
     if (dialog.unreadCount > 0) {
@@ -483,8 +497,8 @@ export default function CRMDashboard({ firstName }: { firstName: string }) {
       {/* Sidebar */}
       <div
         style={{
-          width: sidebarOpen ? '320px' : selected ? '0px' : '100%',
-          minWidth: sidebarOpen ? '320px' : selected ? '0px' : '100%',
+          width: (sidebarOpen || !isMobile) ? '320px' : selected ? '0px' : '100%',
+          minWidth: (sidebarOpen || !isMobile) ? '320px' : selected ? '0px' : '100%',
           flexShrink: 0,
           display: 'flex',
           flexDirection: 'column',

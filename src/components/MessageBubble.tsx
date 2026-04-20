@@ -140,7 +140,14 @@ function VideoInline({ previewUrl, fallbackThumbUrl, fullUrl }: {
           VIDEO
         </span>
       </div>
-      {lightbox && <Lightbox src={fullUrl} type="video" onClose={() => setLightboxV(false)} />}
+      {lightbox && (
+        <Lightbox
+          src={fullUrl}
+          previewSrc={previewUrl}
+          type="video"
+          onClose={() => setLightboxV(false)}
+        />
+      )}
     </>
   );
 }

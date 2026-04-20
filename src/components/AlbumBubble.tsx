@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Download, ChevronLeft, ChevronRight, ImageOff } from 'lucide-react';
+import { X, Download, ChevronLeft, ChevronRight, ImageOff, Zap } from 'lucide-react';
 
 interface Message {
   id: number;
@@ -35,6 +35,9 @@ function thumbUrl(rawId: string, entityType: string, accessHash: string, msgId: 
 }
 function mediumUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=medium`;
+}
+function previewUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
+  return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=preview`;
 }
 function fullUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=full`;
@@ -95,6 +98,45 @@ function AlbumCell({
   );
 }
 
+// Video player inside AlbumLightbox: starts with fast preview, HD on demand
+function AlbumVideoPlayer({ previewSrc, fullSrc }: { previewSrc: string; fullSrc: string }) {
+  const [hd, setHd] = useState(false);
+  return (
+    <div style={{ position: 'relative', maxWidth: '90vw', maxHeight: '80vh' }}>
+      <video
+        key={hd ? fullSrc : previewSrc}
+        src={hd ? fullSrc : previewSrc}
+        controls
+        autoPlay
+        style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: '10px', display: 'block' }}
+      />
+      <button
+        onClick={() => setHd((v) => !v)}
+        style={{
+          position: 'absolute',
+          top: '10px',
+          right: '10px',
+          height: '30px',
+          padding: '0 10px',
+          borderRadius: '8px',
+          background: hd ? 'var(--accent)' : 'rgba(0,0,0,0.5)',
+          border: 'none',
+          color: 'white',
+          fontSize: '11px',
+          fontWeight: '700',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px',
+          backdropFilter: 'blur(6px)',
+        }}
+      >
+        <Zap size={11} fill={hd ? 'white' : 'none'} /> HD
+      </button>
+    </div>
+  );
+}
+
 // Full-screen album lightbox with prev/next navigation
 function AlbumLightbox({ messages, startIndex, rawId, entityType, accessHash, onClose }: {
   messages: Message[];
@@ -137,7 +179,10 @@ function AlbumLightbox({ messages, startIndex, rawId, entityType, accessHash, on
       {/* Media */}
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '80vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {isVideo ? (
-          <video src={src} controls autoPlay style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: '10px' }} />
+          <AlbumVideoPlayer
+            previewSrc={previewUrl(rawId, entityType, accessHash, msg.id)}
+            fullSrc={src}
+          />
         ) : isGif ? (
           <video src={fullUrl(rawId, entityType, accessHash, msg.id)} autoPlay loop muted playsInline style={{ maxWidth: '90vw', maxHeight: '80vh', borderRadius: '10px' }} />
         ) : (

@@ -65,11 +65,49 @@ export async function GET(req: NextRequest) {
         }
       }
 
+      // ── Animated video preview (q=preview) ─────────────────────────────────
+      // Telegram generates a short looping MP4 clip for every video message.
+      // It lives in doc.videoThumbs as a VideoSize with type='v'.
+      if (quality === 'preview' && msg.media instanceof Api.MessageMediaDocument) {
+        const doc = msg.media.document;
+        if (doc instanceof Api.Document && doc.videoThumbs && doc.videoThumbs.length > 0) {
+          const animThumb = doc.videoThumbs.find(
+            (t): t is Api.VideoSize => t instanceof Api.VideoSize && t.type === 'v'
+          );
+          if (animThumb) {
+            const previewResult = await client.downloadMedia(msg, {
+              thumb: animThumb as unknown as number,
+            }) as Buffer | string;
+
+            let previewBuf: Buffer;
+            if (typeof previewResult === 'string') {
+              const fs = await import('fs/promises');
+              previewBuf = await fs.readFile(previewResult);
+            } else {
+              previewBuf = previewResult as Buffer;
+            }
+
+            if (previewBuf && previewBuf.length > 0) {
+              return new NextResponse(bufferToArrayBuffer(previewBuf), {
+                status: 200,
+                headers: {
+                  'Content-Type': 'video/mp4',
+                  'Content-Length': previewBuf.length.toString(),
+                  'Accept-Ranges': 'bytes',
+                  'Cache-Control': 'public, max-age=604800, immutable',
+                },
+              });
+            }
+          }
+        }
+        // No animated preview available — fall through to static thumbnail
+      }
+
       // Decide what to download
       // - animated stickers always get a thumbnail frame
-      // - 'thumb' quality always gets a small thumbnail image
+      // - 'thumb' / 'preview' quality gets a small thumbnail image
       // - videos only get the full file when q=full; otherwise thumbnail poster
-      const useThumbnail = isAnimatedSticker || quality === 'thumb' || (isVideo && quality !== 'full');
+      const useThumbnail = isAnimatedSticker || quality === 'thumb' || quality === 'preview' || (isVideo && quality !== 'full');
 
       let downloadParams: { thumb?: number; sizeType?: string } = {};
 

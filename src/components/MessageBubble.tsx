@@ -101,6 +101,50 @@ function LazyImage({
   );
 }
 
+// Inline video: shows Telegram's animated preview clip, falls back to static thumbnail.
+// Clicking always opens the full video in a lightbox.
+function VideoInline({ previewUrl, fallbackThumbUrl, fullUrl }: {
+  previewUrl: string;
+  fallbackThumbUrl: string;
+  fullUrl: string;
+}) {
+  const [lightbox, setLightboxV] = useState(false);
+  const [useFallback, setUseFallback] = useState(false);
+
+  return (
+    <>
+      <div
+        onClick={() => setLightboxV(true)}
+        style={{ position: 'relative', cursor: 'pointer', width: '260px', lineHeight: 0, borderRadius: '12px', overflow: 'hidden', background: 'rgba(0,0,0,0.2)' }}
+      >
+        {useFallback ? (
+          <LazyImage src={fallbackThumbUrl} fixedW={260} maxH={300} />
+        ) : (
+          <video
+            src={previewUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            onError={() => setUseFallback(true)}
+            style={{ width: '260px', maxHeight: '300px', display: 'block', objectFit: 'cover' }}
+          />
+        )}
+        {/* Play button overlay */}
+        <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.15)' }}>
+          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Play size={22} color="white" style={{ marginLeft: '3px' }} />
+          </div>
+        </div>
+        <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px', letterSpacing: '0.5px' }}>
+          VIDEO
+        </span>
+      </div>
+      {lightbox && <Lightbox src={fullUrl} type="video" onClose={() => setLightboxV(false)} />}
+    </>
+  );
+}
+
 export default function MessageBubble({ id, message, date, out, mediaType, rawId, entityType, accessHash, formatDate }: Props) {
   const [lightbox, setLightbox] = useState<{ src: string; type: 'photo' | 'video' | 'sticker' | 'gif' } | null>(null);
 
@@ -110,8 +154,10 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
   const mediumUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'medium' });
   // Full resolution — only loaded when user opens lightbox
   const fullUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
-  // Video poster frame (small thumbnail image, not the video file)
+  // Video poster frame (static image fallback)
   const videoThumbUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'thumb' });
+  // Animated video preview clip (Telegram's looping GIF-style preview)
+  const videoPreviewUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'preview' });
   // Full video / GIF file URL
   const gifVideoUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
 
@@ -180,30 +226,14 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
           />
         );
 
-      // ── Video — thumbnail with play button, full video in lightbox ─────────
+      // ── Video — animated preview (GIF-style) with play button overlay ────────
       case 'video':
         return (
-          <>
-            <div
-              onClick={() => setLightbox({ src: gifVideoUrl, type: 'video' })}
-              style={{ position: 'relative', cursor: 'pointer', display: 'block', lineHeight: 0 }}
-            >
-              <LazyImage src={videoThumbUrl} fixedW={260} maxH={300} />
-              {/* Play overlay */}
-              <div style={{
-                position: 'absolute', inset: 0,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Play size={22} color="white" style={{ marginLeft: '3px' }} />
-                </div>
-              </div>
-              <span style={{ position: 'absolute', bottom: '8px', left: '8px', background: 'rgba(0,0,0,0.55)', color: 'white', fontSize: '11px', fontWeight: '700', padding: '2px 7px', borderRadius: '4px' }}>
-                VIDEO
-              </span>
-            </div>
-            {lightbox && <Lightbox src={lightbox.src} type="video" onClose={() => setLightbox(null)} />}
-          </>
+          <VideoInline
+            previewUrl={videoPreviewUrl}
+            fallbackThumbUrl={videoThumbUrl}
+            fullUrl={gifVideoUrl}
+          />
         );
 
       // ── Voice message ──────────────────────────────────────────────────────

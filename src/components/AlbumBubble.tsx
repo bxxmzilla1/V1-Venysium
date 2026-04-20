@@ -37,7 +37,7 @@ function mediumUrl(rawId: string, entityType: string, accessHash: string, msgId:
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=medium`;
 }
 function previewUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
-  return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=preview`;
+  return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=480p`;
 }
 function fullUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=full`;

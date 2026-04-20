@@ -122,10 +122,9 @@ function VideoInline({ previewUrl, fallbackThumbUrl, fullUrl }: {
         ) : (
           <video
             src={previewUrl}
-            autoPlay
-            loop
             muted
             playsInline
+            poster={fallbackThumbUrl}
             onError={() => setUseFallback(true)}
             style={{ width: '260px', maxHeight: '300px', display: 'block', objectFit: 'cover' }}
           />
@@ -163,8 +162,8 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
   const fullUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
   // Video poster frame (static image fallback)
   const videoThumbUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'thumb' });
-  // Animated video preview clip (Telegram's looping GIF-style preview)
-  const videoPreviewUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'preview' });
+  // 480p transcoded stream (fast loading, reasonable quality)
+  const videoPreviewUrl = mediaUrl(rawId, entityType, accessHash, id, { q: '480p' });
   // Full video / GIF file URL
   const gifVideoUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
 

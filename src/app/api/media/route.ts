@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { spawn } from 'child_process';
 import { Api } from 'telegram';
 import bigInt from 'big-integer';
 import { createClient } from '@/lib/telegram';
 import { getSession } from '@/lib/session';
 import { buildInputPeer, EntityType } from '@/lib/peer';
+// Loaded lazily so Turbopack doesn't try to statically bundle it
+async function getFfmpegPath(): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require('@ffmpeg-installer/ffmpeg').path as string;
+}
 
 function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
   const ab = new ArrayBuffer(buf.byteLength);
@@ -101,6 +107,78 @@ export async function GET(req: NextRequest) {
           }
         }
         // No animated preview — fall through to static thumbnail
+      }
+
+      // ── 480p transcode path (q=480p) ────────────────────────────────────────
+      // Telegram stream → FFmpeg (stdin→stdout) → browser
+      // Uses fragmented MP4 so the browser can start playing immediately.
+      if (quality === '480p' && (isVideo || isGif) && docRef) {
+        const location = new Api.InputDocumentFileLocation({
+          id: docRef.id,
+          accessHash: docRef.accessHash,
+          fileReference: docRef.fileReference,
+          thumbSize: '',
+        });
+
+        shouldDisconnectInFinally = false;
+
+        const ffmpegBin = await getFfmpegPath();
+        const ffmpeg = spawn(ffmpegBin, [
+          '-i', 'pipe:0',                  // read from stdin
+          '-vf', 'scale=-2:480',           // scale to 480p height, keep aspect ratio
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast',          // fastest encode, starts outputting quickly
+          '-crf', '28',                    // quality (lower = better, 28 is good for preview)
+          '-c:a', 'aac',
+          '-b:a', '96k',
+          '-movflags', 'frag_keyframe+empty_moov+default_base_moof', // streamable fragmented MP4
+          '-f', 'mp4',
+          'pipe:1',                        // write to stdout
+        ]);
+
+        // Feed Telegram chunks → FFmpeg stdin (runs concurrently with output streaming)
+        (async () => {
+          try {
+            for await (const chunk of client.iterDownload({
+              file: location,
+              offset: bigInt(0),
+              requestSize: 512 * 1024,
+            })) {
+              if (!ffmpeg.stdin.writable) break;
+              ffmpeg.stdin.write(chunk as Buffer);
+            }
+          } catch {
+            // ignore — ffmpeg will error on its own if input stops
+          } finally {
+            ffmpeg.stdin.end();
+            await client.disconnect();
+          }
+        })();
+
+        // Stream FFmpeg stdout → browser
+        const stream480 = new ReadableStream({
+          start(controller) {
+            ffmpeg.stdout.on('data', (chunk: Buffer) => {
+              controller.enqueue(new Uint8Array(chunk));
+            });
+            ffmpeg.stdout.on('end', () => controller.close());
+            ffmpeg.stdout.on('error', (err) => controller.error(err));
+            ffmpeg.stderr.on('data', () => {}); // consume stderr to prevent blocking
+          },
+          cancel() {
+            ffmpeg.kill('SIGKILL');
+          },
+        });
+
+        return new NextResponse(stream480, {
+          status: 200,
+          headers: {
+            'Content-Type': 'video/mp4',
+            'Accept-Ranges': 'none',        // fragmented MP4 doesn't support range seek
+            'Cache-Control': 'no-store',    // don't cache since it's a live transcode
+            'X-Quality': '480p',
+          },
+        });
       }
 
       // ── Streaming path for full video/GIF (q=full) ──────────────────────────

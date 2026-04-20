@@ -169,7 +169,7 @@ export default function Lightbox({ src, previewSrc, type, onClose }: LightboxPro
         }}
       >
         {type === 'video' && previewSrc && !useFullQuality
-          ? 'Preview mode — tap HD for full quality'
+          ? '480p — tap HD for original quality'
           : 'Press Esc or click outside to close'}
       </p>
     </div>

@@ -10,8 +10,12 @@ export interface SessionData {
   userId?: string;
 }
 
+const SESSION_SECRET =
+  process.env.SESSION_SECRET ||
+  'fallback-dev-secret-please-set-SESSION_SECRET-in-vercel-env-32chars!!';
+
 export const sessionOptions: SessionOptions = {
-  password: process.env.SESSION_SECRET as string,
+  password: SESSION_SECRET,
   cookieName: 'tgcrm-session',
   cookieOptions: {
     secure: process.env.NODE_ENV === 'production',

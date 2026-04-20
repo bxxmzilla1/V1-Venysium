@@ -1,8 +1,8 @@
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
 
-const API_ID = parseInt(process.env.TELEGRAM_API_ID as string);
-const API_HASH = process.env.TELEGRAM_API_HASH as string;
+const API_ID = parseInt(process.env.TELEGRAM_API_ID || '0');
+const API_HASH = process.env.TELEGRAM_API_HASH || '';
 
 export function createClient(sessionString?: string) {
   const session = new StringSession(sessionString || '');

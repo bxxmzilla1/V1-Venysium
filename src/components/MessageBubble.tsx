@@ -104,8 +104,10 @@ function LazyImage({
 export default function MessageBubble({ id, message, date, out, mediaType, rawId, entityType, accessHash, formatDate }: Props) {
   const [lightbox, setLightbox] = useState<{ src: string; type: 'photo' | 'video' | 'sticker' | 'gif' } | null>(null);
 
-  // Inline thumbnail (fast) — used for everything shown in the chat list
+  // Tiny thumbnail — used only for stickers and video poster frames
   const thumbUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'thumb' });
+  // Medium quality — used for inline photo/gif display (sharp enough, faster than full)
+  const mediumUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'medium' });
   // Full resolution — only loaded when user opens lightbox
   const fullUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
   // Video thumb specifically (uses thumb index, not sizeType)
@@ -129,12 +131,12 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
   function renderMedia() {
     switch (mediaType) {
 
-      // ── Photo — fixed 260px wide thumbnail inline, full in lightbox ─────────
+      // ── Photo — medium quality inline, full in lightbox ──────────────────────
       case 'photo':
         return (
           <>
             <LazyImage
-              src={thumbUrl}
+              src={mediumUrl}
               fixedW={260} maxH={340}
               onClick={() => setLightbox({ src: fullUrl, type: 'photo' })}
             />

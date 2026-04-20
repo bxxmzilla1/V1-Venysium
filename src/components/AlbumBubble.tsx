@@ -33,6 +33,9 @@ const MAX_VISIBLE = 4;
 function thumbUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=thumb`;
 }
+function mediumUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
+  return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=medium`;
+}
 function fullUrl(rawId: string, entityType: string, accessHash: string, msgId: number) {
   return `/api/media?rawId=${encodeURIComponent(rawId)}&entityType=${entityType}&accessHash=${encodeURIComponent(accessHash)}&msgId=${msgId}&q=full`;
 }
@@ -178,7 +181,7 @@ export default function AlbumBubble({ album, rawId, entityType, accessHash, form
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={thumbUrl(rawId, entityType, accessHash, msg.id)}
+                src={mediumUrl(rawId, entityType, accessHash, msg.id)}
                 alt=""
                 loading="lazy"
                 style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', position: 'absolute', inset: 0 }}

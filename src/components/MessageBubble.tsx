@@ -110,10 +110,10 @@ export default function MessageBubble({ id, message, date, out, mediaType, rawId
   const mediumUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'medium' });
   // Full resolution — only loaded when user opens lightbox
   const fullUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
-  // Video thumb specifically (uses thumb index, not sizeType)
-  const videoThumbUrl = mediaUrl(rawId, entityType, accessHash, id, { thumb: true });
-  // GIF / video full download URL
-  const gifVideoUrl = mediaUrl(rawId, entityType, accessHash, id, {});
+  // Video poster frame (small thumbnail image, not the video file)
+  const videoThumbUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'thumb' });
+  // Full video / GIF file URL
+  const gifVideoUrl = mediaUrl(rawId, entityType, accessHash, id, { q: 'full' });
 
   const isSticker = mediaType === 'sticker' || mediaType === 'sticker_animated';
 

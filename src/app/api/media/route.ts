@@ -22,8 +22,7 @@ export async function GET(req: NextRequest) {
     const entityType = (url.searchParams.get('entityType') || 'user') as EntityType;
     const accessHash = url.searchParams.get('accessHash') || '0';
     const msgId = parseInt(url.searchParams.get('msgId') || '0');
-
-    // quality: 'thumb' = smallest (~s), 'medium' = medium (~m), 'full' = original
+    // quality: 'thumb' = smallest, 'medium' = ~800px, 'full' = original
     const quality = url.searchParams.get('q') || 'thumb';
 
     if (!rawId || !msgId) {
@@ -38,7 +37,6 @@ export async function GET(req: NextRequest) {
       const result = await client.getMessages(peer, { ids: [msgId] });
       const msg = result[0];
 
-      // getMessages can return MessageEmpty for inaccessible messages
       if (!msg || msg instanceof Api.MessageEmpty || !('media' in msg) || !msg.media) {
         return new NextResponse('Media not found', { status: 404 });
       }
@@ -67,22 +65,23 @@ export async function GET(req: NextRequest) {
         }
       }
 
-      // Decide what to actually download
-      // Thumbnails: animated stickers, 'thumb' quality, video thumbnails
+      // Decide what to download
+      // - animated stickers always get a thumbnail frame
+      // - 'thumb' quality always gets a small thumbnail image
+      // - videos only get the full file when q=full; otherwise thumbnail poster
       const useThumbnail = isAnimatedSticker || quality === 'thumb' || (isVideo && quality !== 'full');
 
       let downloadParams: { thumb?: number; sizeType?: string } = {};
 
       if (useThumbnail) {
-        // thumb:0 = first/smallest thumbnail from Telegram's available sizes
         downloadParams = { thumb: 0 };
         mimeType = 'image/jpeg';
       } else if (quality === 'medium' && !isGif && !isVideo) {
-        // 'x' = ~800px — large enough to be sharp, smaller than original
+        // 'x' ≈ 800px — sharp enough for album grid / inline display
         downloadParams = { sizeType: 'x' };
         mimeType = 'image/jpeg';
       }
-      // 'full' or GIFs/videos: no extra params, download full file
+      // quality === 'full', or GIFs, or videos → no extra params → download full file
 
       const downloadResult = await client.downloadMedia(msg, downloadParams) as Buffer | string;
 
@@ -98,12 +97,38 @@ export async function GET(req: NextRequest) {
         return new NextResponse('Empty media', { status: 404 });
       }
 
+      const totalSize = buffer.length;
+
+      // ── Range request support (needed for video seek/buffering) ──────────────
+      const rangeHeader = req.headers.get('range');
+      if (rangeHeader && (isVideo || isGif)) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+        if (match) {
+          const start = parseInt(match[1]);
+          const end = match[2] ? parseInt(match[2]) : totalSize - 1;
+          const chunkSize = end - start + 1;
+          const chunk = buffer.subarray(start, end + 1);
+
+          return new NextResponse(bufferToArrayBuffer(chunk), {
+            status: 206,
+            headers: {
+              'Content-Type': mimeType,
+              'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+              'Content-Length': chunkSize.toString(),
+              'Accept-Ranges': 'bytes',
+              'Cache-Control': 'public, max-age=604800, immutable',
+            },
+          });
+        }
+      }
+
       return new NextResponse(bufferToArrayBuffer(buffer), {
         status: 200,
         headers: {
           'Content-Type': mimeType,
-          'Content-Length': buffer.length.toString(),
-          'Cache-Control': 'public, max-age=604800, immutable', // 7 days
+          'Content-Length': totalSize.toString(),
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'public, max-age=604800, immutable',
         },
       });
     } finally {
